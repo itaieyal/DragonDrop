@@ -1,0 +1,446 @@
+:root {
+  --bg: #1e1e24;
+  --bg-panel: #2b2b36;
+  --text: #e0e0e0;
+  --accent: #5e81ac;
+  --border: #4c566a;
+  --selected: #81a1c140;
+  --sel-border: #81a1c1;
+  --hover: #3b4252;
+}
+
+body {
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  margin: 0;
+  padding: 20px;
+}
+
+h2 {
+  font-size: 1.2rem;
+  margin-top: 0;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 10px;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 3fr 1fr;
+  grid-template-rows: 1fr auto;
+  gap: 20px;
+  max-width: 1400px;
+  margin: 0 auto;
+  height: calc(100vh - 120px);
+}
+
+.main-panel {
+  grid-column: 1 / 2;
+  grid-row: 1 / 2;
+}
+
+.right-panel {
+  grid-column: 2 / 3;
+  grid-row: 1 / 3;
+}
+
+.bottom-panel {
+  grid-column: 1 / 2;
+  grid-row: 2 / 3;
+}
+
+.shortcuts-footer {
+  max-width: 1400px;
+  margin: 20px auto 0 auto;
+  padding: 15px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.shortcuts-container {
+  display: flex;
+  justify-content: center;
+  gap: 25px;
+  flex-wrap: wrap;
+}
+
+.shortcuts-container span strong {
+  color: var(--accent);
+  margin-right: 4px;
+}
+
+.panel {
+  flex: 1;
+  background: var(--bg-panel);
+  border-radius: 8px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.bottom-panel {
+  flex: 0 0 auto;
+  min-height: 250px;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 10px;
+}
+
+.panel-header h2 {
+  margin: 0;
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+textarea {
+  width: 100%;
+  height: 150px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 10px;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.controls {
+  display: flex;
+  gap: 10px;
+  margin: 15px 0;
+}
+
+button {
+  background: var(--accent);
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+button:hover {
+  filter: brightness(1.2);
+}
+
+pre#jsonView {
+  flex: 1;
+  background: var(--bg);
+  padding: 10px;
+  border-radius: 4px;
+  overflow: auto;
+  font-size: 0.85rem;
+  color: #a3be8c;
+  border: 1px solid var(--border);
+}
+
+/* History List Styles */
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  flex: 1;
+  padding-right: 5px;
+}
+
+.history-item {
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  transition:
+    opacity 0.2s,
+    background 0.2s;
+}
+
+.history-item.past {
+  opacity: 0.7;
+}
+
+.history-item.future {
+  opacity: 0.4;
+  border-style: dashed;
+}
+
+.history-item.current {
+  background: var(--selected);
+  border-color: var(--sel-border);
+  font-weight: bold;
+}
+
+/* Editor Core Styles */
+
+.dd-editor {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  user-select: none; /* Crucial for DnD */
+  transition:
+    box-shadow 0.2s,
+    border-color 0.2s;
+}
+
+.dd-editor:focus-within {
+  border-color: var(--accent);
+}
+
+/* Verse */
+.dd-verse {
+  position: relative;
+  margin-bottom: 24px;
+  padding: 10px 10px 10px 30px; /* Space for handle */
+  border: 1px dashed transparent;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+.dd-verse:hover {
+  border-color: var(--border);
+}
+.dd-verse:hover .dd-verse-handle {
+  opacity: 1; /* Show grabber */
+}
+.dd-verse.dd-selected {
+  background: var(--selected);
+  border-color: var(--sel-border);
+}
+
+.dd-drag-handle {
+  position: absolute;
+  left: 5px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 20px;
+  opacity: 0;
+  cursor: grab;
+  background-image: radial-gradient(var(--text) 20%, transparent 20%);
+  background-size: 4px 4px;
+  transition: opacity 0.2s;
+}
+
+.dd-verse-handle {
+  left: 8px;
+  height: 30px;
+}
+
+.dd-drag-handle:active {
+  cursor: grabbing;
+}
+
+/* Line */
+.dd-line {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px; /* Visual space between implicit-space tokens */
+  padding: 4px 8px 4px 24px; /* Space for handle */
+  margin: 2px 0;
+  border-radius: 4px;
+  min-height: 28px;
+}
+.dd-line:hover {
+  background: var(--hover);
+}
+.dd-line:hover .dd-line-handle {
+  opacity: 0.5; /* Subtler grabber than verse */
+}
+.dd-line:hover .dd-line-handle:hover {
+  opacity: 1;
+}
+.dd-line.dd-selected {
+  background: var(--selected);
+  box-shadow: inset 0 0 0 1px var(--sel-border);
+}
+
+/* Token */
+.dd-token {
+  display: inline-block;
+  padding: 2px 4px;
+  border-radius: 3px;
+  cursor: grab;
+  transition: transform 0.1s;
+}
+.dd-token:active {
+  cursor: grabbing;
+}
+
+.dd-token-word {
+  background: #434c5e;
+}
+.dd-token-punct {
+  background: transparent;
+  color: #d8dee9;
+  font-weight: bold;
+}
+
+.dd-token:hover {
+  filter: brightness(1.3);
+}
+.dd-token.dd-selected {
+  background: var(--sel-border);
+  color: #1e1e24;
+}
+
+/* Ghost Elements */
+.dd-ghost {
+  pointer-events: none;
+  opacity: 0.9;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.5);
+  transform-origin: top left;
+  border-radius: 4px;
+  background: var(--bg-panel);
+  /* Make sure it pops visually */
+  border: 1px solid var(--accent);
+}
+
+.dd-drag-preview {
+  position: fixed;
+  pointer-events: none;
+  z-index: 1000;
+  background: var(--accent);
+  color: white;
+  padding: 4px 12px;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  font-size: 0.9rem;
+  font-weight: 500;
+  opacity: 0.9;
+}
+
+/* Originals being dragged */
+.dd-dragging-original {
+  opacity: 0.3;
+}
+
+.dd-drop-indicator {
+  position: absolute;
+  pointer-events: none;
+  z-index: 999;
+  background: #ebcb8b; /* Yellow highlight */
+  box-shadow: 0 0 4px #ebcb8b;
+  display: none;
+  border-radius: 3px;
+}
+
+.dd-spacer {
+  pointer-events: none;
+  background: var(--sel-border);
+  opacity: 0.1;
+  border-radius: 4px;
+  transition:
+    width 0.2s,
+    height 0.2s; /* Smooth expansion */
+}
+
+.dd-empty-verse {
+  border-radius: var(--radius-sm);
+  min-height: 0.25rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin: 0.5rem 0;
+  opacity: 0.4;
+  border: 2px dashed transparent;
+}
+
+.dd-empty-verse:hover {
+  background-color: var(--surface-1);
+  border-color: var(--border);
+  opacity: 0.6;
+  min-height: 1rem;
+}
+
+.dd-empty-verse.dd-selected {
+  background-color: var(--selected) !important;
+  opacity: 1;
+  border: 2px solid var(--sel-border);
+  min-height: 1.5rem;
+}
+
+.dd-empty-line {
+  border-radius: var(--radius-sm);
+  min-height: 0.25rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin: 0.25rem 0;
+  opacity: 0.4;
+  border: 2px dashed transparent;
+}
+
+.dd-empty-line:hover {
+  background-color: var(--hover);
+  border-color: var(--border);
+  opacity: 0.6;
+  min-height: 0.75rem;
+}
+
+.dd-empty-line.dd-selected {
+  background-color: var(--selected) !important;
+  opacity: 1;
+  border: 2px solid var(--sel-border);
+  min-height: 1.25rem;
+}
+
+.dd-empty-verse:focus,
+.dd-empty-verse:focus-within,
+.dd-empty-verse.dd-focus-visible {
+  outline: none;
+  border-color: var(--sel-border);
+  background-color: var(--hover);
+  min-height: 1.5rem;
+}
+
+.dd-empty-line:focus,
+.dd-empty-line:focus-within,
+.dd-empty-line.dd-focus-visible {
+  outline: none;
+  border-color: var(--sel-border);
+  background-color: var(--hover);
+  min-height: 1.25rem;
+}
+
+/* Context Menu */
+.dd-context-menu {
+  position: fixed;
+  z-index: 2000;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  padding: 4px 0;
+  display: none;
+  min-width: 150px;
+}
+.dd-context-menu-item {
+  display: block;
+  width: 100%;
+  padding: 8px 16px;
+  text-align: left;
+  background: transparent;
+  color: var(--text);
+  border: none;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+.dd-context-menu-item:hover {
+  background: var(--hover);
+}
