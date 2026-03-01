@@ -19,6 +19,7 @@ export type EditorOptions = {
     animation?: { enabled: boolean; durationMs: number };
     autoScroll?: { enabled: boolean; edgePx: number; speed: number };
     rtl?: boolean;
+    getFreewriteBank?: () => { words: string[], lines: string[], verses: string[] };
 };
 
 const defaultOptions = {
@@ -57,6 +58,13 @@ export class Editor {
     // Modes
     public isKeyboardMode = true;
 
+    // Suggestion Mode State
+    public activeSuggestion: {
+         targetId: string;
+         alternatives: string[];
+         currentIndex: number;
+    } | null = null;
+
     private contextMenu: ContextMenu;
 
     // Auto-scroll
@@ -74,22 +82,52 @@ export class Editor {
         this.contextMenu = new ContextMenu(this, [
             {
                 label: "Shuffle Words",
-                condition: (sel) => sel.items.length === 1 && sel.items[0].type === "line",
+                condition: (_sel) => _sel.items.length === 1 && _sel.items[0].type === "line",
                 action: () => this.shuffleSelection()
             },
             {
                 label: "Shuffle Lines",
-                condition: (sel) => sel.items.length === 1 && sel.items[0].type === "verse",
+                condition: (_sel) => _sel.items.length === 1 && _sel.items[0].type === "verse",
                 action: () => this.shuffleSelection()
             },
             {
+                label: "Add Random Word",
+                condition: (_sel) => _sel.items.length === 1 && (_sel.items[0].type === "token" || _sel.items[0].type === "line"),
+                action: () => this.addRandomSuggestion("word", this.selection.items[0])
+            },
+            {
+                label: "Add Random Line",
+                condition: (_sel) => _sel.items.length === 1 && _sel.items[0].type === "empty-line",
+                action: () => this.addRandomSuggestion("line", this.selection.items[0])
+            },
+            {
+                label: "Add Random Verse",
+                condition: (_sel) => _sel.items.length === 1 && _sel.items[0].type === "empty-verse",
+                action: () => this.addRandomSuggestion("verse", this.selection.items[0])
+            },
+            {
+                label: "Prompt Add Random Word",
+                condition: (_sel) => false, // Only triggered programmatically via contextMenu.openAt
+                action: () => this.addRandomSuggestion("word", this.selection.items[0])
+            },
+            {
+                label: "Prompt Add Random Line",
+                condition: (_sel) => false, // Only triggered programmatically via contextMenu.openAt
+                action: () => this.addRandomSuggestion("line", this.selection.items[0])
+            },
+            {
+                label: "Prompt Add Random Verse",
+                condition: (_sel) => false, // Only triggered programmatically via contextMenu.openAt
+                action: () => this.addRandomSuggestion("verse", this.selection.items[0])
+            },
+            {
                 label: "Add Words After",
-                condition: (sel) => sel.items.length === 1 && sel.items[0].type === "token",
+                condition: (_sel) => _sel.items.length === 1 && _sel.items[0].type === "token",
                 action: () => this.promptAddWords(this.selection.items[0])
             },
             {
                 label: "Add Words",
-                condition: (sel) => sel.items.length !== 1 || sel.items[0].type !== "token",
+                condition: (_sel) => _sel.items.length !== 1 || _sel.items[0].type !== "token",
                 action: (x, y) => {
                     const selItem = this.selection.items.length === 1 ? this.selection.items[0] : undefined;
                     this.promptAddWords(selItem, x, y);
@@ -97,7 +135,7 @@ export class Editor {
             },
             {
                 label: "Remove",
-                condition: (sel) => sel.items.length > 0,
+                condition: (_sel) => _sel.items.length > 0,
                 action: () => this.removeSelection()
             }
         ]);
@@ -128,10 +166,20 @@ export class Editor {
     setDoc(doc: Doc, source: "api" | "undo" | "redo" | "keyboard" = "api") {
         this.doc = doc;
 
+        // Clear suggestion if source is fundamentally altering structure or not from a keyboard modification to cycle suggestion
+        if (source !== "keyboard") {
+             this.activeSuggestion = null;
+        } else if (this.activeSuggestion) {
+             // Let's only clear the active suggestion if the selected item is not the suggested item anymore
+             if (!this.selection.items.some(i => i.id === this.activeSuggestion?.targetId)) {
+                 this.activeSuggestion = null;
+             }
+        }
+
         // Measure before patch if anim enabled
         const snap = this.options.animation?.enabled ? measureFLIP(this.container) : null;
 
-        patchDOM(this.container, this.doc, this.options.renderers);
+        patchDOM(this.container, this.doc, this.options.renderers, this.activeSuggestion?.targetId);
         patchSelection(this.container, this.selection);
 
         if (snap) playFLIP(this.container, snap, this.options.animation?.durationMs || 0);
@@ -192,20 +240,29 @@ export class Editor {
             }
 
             if (e.key === "Escape") {
-                this.setSelection({ items: [] });
+                if (this.activeSuggestion) {
+                    this.activeSuggestion = null;
+                    this.setDoc(this.doc, "keyboard"); // This clears the highlight
+                } else {
+                    this.setSelection({ items: [] });
+                }
             } else if (e.key.toLowerCase() === "i" || e.key === "ן") {
                 const item = this.selection.items[0];
+                e.preventDefault();
                 if (item) {
-                     e.preventDefault();
                      if (item.type === "token") this.promptAddWords(item, undefined, undefined, "after-token");
                      if (item.type === "line" || item.type === "empty-line") this.promptAddWords(item, undefined, undefined, "start-line");
                      if (item.type === "verse" || item.type === "empty-verse") this.promptAddWords(item, undefined, undefined, "start-verse");
+                } else {
+                     this.promptAddWords(undefined, undefined, undefined, "end-doc");
                 }
             } else if (e.key.toLowerCase() === "o" || e.key === "ם") {
                 const item = this.selection.items[0];
-                if (item && (item.type === "token" || item.type === "line" || item.type === "empty-line" || item.type === "empty-verse")) {
-                     e.preventDefault();
+                e.preventDefault();
+                if (item && (item.type === "token" || item.type === "line" || item.type === "empty-line" || item.type === "empty-verse" || item.type === "verse")) {
                      this.promptAddWords(item, undefined, undefined, ((e.key === "o" || e.key === "ם") && !e.shiftKey) ? "after-line" : "before-line");
+                } else if (!item) {
+                     this.promptAddWords(undefined, undefined, undefined, "end-doc");
                 }
             } else if (e.key.toLowerCase() === "u" || e.key === "ו") {
                 e.preventDefault();
@@ -213,6 +270,26 @@ export class Editor {
             } else if (e.key.toLowerCase() === "r" || e.key === "ר") {
                 e.preventDefault();
                 this.emit("redoRequest");
+            } else if (e.key.toLowerCase() === "s" || e.key === "ד") {
+                const item = this.selection.items[0];
+                if (item) {
+                     e.preventDefault();
+                     if (item.type === "token") this.addRandomSuggestion("word", item);
+                     else if (item.type === "line") this.addRandomSuggestion("word", item); // or line depending on preference, but usually "Add Random Word" is mapped to line in context menu
+                     else if (item.type === "empty-line") this.addRandomSuggestion("line", item);
+                     else if (item.type === "empty-verse") this.addRandomSuggestion("verse", item);
+                }
+            } else if (e.key === ";" || e.key === "ף") {
+                e.preventDefault();
+                this.cycleSuggestion(1);
+            } else if (e.key === "'" || e.key === ",") {
+                e.preventDefault();
+                this.cycleSuggestion(-1);
+            } else if (e.key === "Enter" && this.activeSuggestion && this.isKeyboardMode) {
+                // Commit suggestion
+                e.preventDefault();
+                this.activeSuggestion = null;
+                this.setDoc(this.doc, "keyboard");
             } else if (e.key === "Backspace" || e.key === "Delete") {
                 this.removeSelection();
             } else if (e.key.startsWith("Arrow")) {
@@ -387,10 +464,14 @@ export class Editor {
              if (strategyOverride === "before-line" || strategyOverride === "after-line") {
                  let lineEl = domEl.closest('.dd-line');
                  if (!lineEl) lineEl = domEl.closest('.dd-empty-line');
-                 if (!lineEl) lineEl = domEl; // Fallback
 
-                 if (strategyOverride === "before-line") lineEl.before(rootInput);
-                 else lineEl.after(rootInput);
+                 if (lineEl) {
+                     if (strategyOverride === "before-line") lineEl.before(rootInput);
+                     else lineEl.after(rootInput);
+                 } else {
+                     if (strategyOverride === "before-line") domEl.before(rootInput);
+                     else domEl.after(rootInput);
+                 }
              }
              else if (strategyOverride === "start-line" || strategyOverride === "start-verse") domEl.prepend(rootInput);
              else if (strategyOverride === "end-line" || strategyOverride === "end-verse" || strategyOverride === "end-doc") domEl.appendChild(rootInput);
@@ -486,26 +567,47 @@ export class Editor {
                               }
                           };
 
+                          const newVerses = parsed.verses.map(v => ({...v, id: createNewId('v'), lines: v.lines.map(l => ({...l, id: createNewId('l'), tokens: l.tokens.map(t => ({...t, id: createNewId('t')}))}))}));
+
+                          const setLastTokenFromNewVerses = () => {
+                              if (newVerses.length > 0) {
+                                  const lastV = newVerses[newVerses.length - 1];
+                                  if (lastV.lines.length > 0) {
+                                      const lastL = lastV.lines[lastV.lines.length - 1];
+                                      if (lastL.tokens.length > 0) {
+                                          lastTokenId = lastL.tokens[lastL.tokens.length - 1].id;
+                                      }
+                                  }
+                              }
+                          };
+
+                          let handledAtTopLevel = false;
+
                           for (let vIdx = 0; vIdx < newDoc.verses.length; vIdx++) {
                               const v = newDoc.verses[vIdx];
                               if (item && item.type === "empty-verse" && item.id.startsWith(v.id)) {
-                                  if (insertStrategy === "start-verse" || item.id.endsWith("-start")) {
-                                      v.lines.unshift(...newLines);
+                                  if (item.id.endsWith("-start")) {
+                                      newDoc.verses.splice(vIdx, 0, ...newVerses);
                                   } else {
-                                      v.lines.push(...newLines);
+                                      newDoc.verses.splice(vIdx + 1, 0, ...newVerses);
                                   }
-                                  setLastTokenFromNewLines();
+                                  setLastTokenFromNewVerses();
+                                  handledAtTopLevel = true;
                                   break;
                               }
 
                               if (item && item.type === "verse" && item.id === v.id) {
-                                  if (insertStrategy === "start-verse") {
+                                  if (insertStrategy === "start-verse" || insertStrategy === "before-line") {
                                       v.lines.unshift(...newLines);
-                                  } else {
+                                      setLastTokenFromNewLines();
+                                      handledAtTopLevel = true;
+                                      break;
+                                  } else if (insertStrategy === "end-verse" || insertStrategy === "after-line") {
                                       v.lines.push(...newLines);
+                                      setLastTokenFromNewLines();
+                                      handledAtTopLevel = true;
+                                      break;
                                   }
-                                  setLastTokenFromNewLines();
-                                  break;
                               }
 
                               let found = false;
@@ -566,7 +668,15 @@ export class Editor {
                                   setLastTokenFromNewLines();
                                   found = true;
                               }
-                              if (found) break;
+                              if (found) {
+                                  handledAtTopLevel = true;
+                                  break;
+                              }
+                          }
+
+                          if (!handledAtTopLevel && newDoc.verses.length === 0 && item && item.type === "empty-verse") {
+                              newDoc.verses.push(...newVerses);
+                              setLastTokenFromNewVerses();
                           }
                      }
 
@@ -609,6 +719,321 @@ export class Editor {
         rootInput.addEventListener("blur", () => {
              commit(); // Commit whatever was typed when clicking away
         });
+    }
+
+    public addRandomSuggestion(type: "word" | "line" | "verse", contextItem: SelectionItem) {
+        if (!this.options.getFreewriteBank) return;
+        const bank = this.options.getFreewriteBank();
+        let alternatives: string[] = [];
+
+        if (type === "word" && bank.words.length > 0) {
+            alternatives = bank.words;
+        } else if (type === "line" && bank.lines.length > 0) {
+            alternatives = bank.lines;
+        } else if (type === "verse" && bank.verses.length > 0) {
+            alternatives = bank.verses;
+        }
+
+        if (alternatives.length === 0) return;
+
+        // Shuffle the alternatives so cycling isn't always the exact same order
+        alternatives = [...alternatives].sort(() => Math.random() - 0.5);
+
+        const textToInsert = alternatives[0];
+
+        try {
+            const newDoc: Doc = JSON.parse(JSON.stringify(this.doc));
+            const parsed = defaultParser(textToInsert);
+            const createNewId = (prefix: string) => `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+            let insertedId: string | null = null;
+            let handled = false;
+
+            if (type === "word") {
+                const newTokens = parsed.verses.flatMap((v: Verse) => v.lines.flatMap((l: Line) => l.tokens));
+                if (newTokens.length === 0) return;
+                const tokenToAdd = { ...newTokens[0], id: createNewId('t') };
+
+                if (newDoc.verses.length === 0) {
+                    newDoc.verses.push({ id: createNewId('v'), lines: [{ id: createNewId('l'), tokens: [tokenToAdd] }] });
+                    insertedId = tokenToAdd.id;
+                    handled = true;
+                } else {
+                    for (let vIdx = 0; vIdx < newDoc.verses.length; vIdx++) {
+                        const v = newDoc.verses[vIdx];
+
+                        if (contextItem.type === "empty-verse" && contextItem.id.startsWith(v.id)) {
+                            const newLine = { id: createNewId('l'), tokens: [tokenToAdd] };
+                            if (contextItem.id.endsWith("-start")) v.lines.unshift(newLine);
+                            else v.lines.push(newLine);
+                            insertedId = tokenToAdd.id;
+                            handled = true;
+                            break;
+                        }
+
+                        if (contextItem.type === "empty-line") {
+                             if (contextItem.id.startsWith(v.id)) {
+                                 const newLine = { id: createNewId('l'), tokens: [tokenToAdd] };
+                                 if (contextItem.id.endsWith("-start")) v.lines.unshift(newLine);
+                                 else v.lines.push(newLine);
+                                 insertedId = tokenToAdd.id;
+                                 handled = true;
+                                 break;
+                             } else {
+                                 const lIdx = v.lines.findIndex(l => contextItem.id.startsWith(l.id));
+                                 if (lIdx !== -1) {
+                                     const newLine = { id: createNewId('l'), tokens: [tokenToAdd] };
+                                     if (contextItem.id.endsWith("-start")) v.lines.splice(lIdx, 0, newLine);
+                                     else v.lines.splice(lIdx + 1, 0, newLine);
+                                     insertedId = tokenToAdd.id;
+                                     handled = true;
+                                     break;
+                                 }
+                             }
+                        }
+
+                        if (contextItem.type === "verse" && contextItem.id === v.id) {
+                            v.lines.push({ id: createNewId('l'), tokens: [tokenToAdd] });
+                            insertedId = tokenToAdd.id;
+                            handled = true;
+                            break;
+                        }
+
+                        for (let lIdx = 0; lIdx < v.lines.length; lIdx++) {
+                            const l = v.lines[lIdx];
+                            const tIdx = l.tokens.findIndex(t => t.id === contextItem.id);
+                            if (tIdx !== -1) {
+                                l.tokens.splice(tIdx + 1, 0, tokenToAdd);
+                                insertedId = tokenToAdd.id;
+                                handled = true;
+                                break;
+                            } else if (contextItem.type === "line" && l.id === contextItem.id) {
+                                // "Add Random Word" from Line Context Menu
+                                l.tokens.push(tokenToAdd);
+                                insertedId = tokenToAdd.id;
+                                handled = true;
+                                break;
+                            }
+                        }
+                        if (handled) break;
+                    }
+                }
+            } else if (type === "line") {
+                const newLines = parsed.verses.flatMap((v: Verse) => v.lines).map(l => ({...l, id: createNewId('l'), tokens: l.tokens.map(t => ({...t, id: createNewId('t')}))}));
+                if (newLines.length === 0) return;
+                const lineToAdd = newLines[0];
+
+                if (newDoc.verses.length === 0) {
+                     newDoc.verses.push({ id: createNewId('v'), lines: [lineToAdd] });
+                     insertedId = lineToAdd.id;
+                     handled = true;
+                } else {
+                    for (let vIdx = 0; vIdx < newDoc.verses.length; vIdx++) {
+                        const v = newDoc.verses[vIdx];
+
+                        if (contextItem.type === "empty-verse" && contextItem.id.startsWith(v.id)) {
+                             if (contextItem.id.endsWith("-start")) {
+                                  v.lines.unshift(lineToAdd);
+                             } else {
+                                  v.lines.push(lineToAdd);
+                             }
+                             insertedId = lineToAdd.id;
+                             handled = true;
+                             break;
+                        }
+
+                        if (contextItem.type === "empty-line") {
+                             if (contextItem.id.startsWith(v.id)) {
+                                 if (contextItem.id.endsWith("-start")) v.lines.unshift(lineToAdd);
+                                 else v.lines.push(lineToAdd);
+                                 insertedId = lineToAdd.id;
+                                 handled = true;
+                                 break;
+                             } else {
+                                 const lIdx = v.lines.findIndex(l => contextItem.id.startsWith(l.id));
+                                 if (lIdx !== -1) {
+                                     if (contextItem.id.endsWith("-start")) v.lines.splice(lIdx, 0, lineToAdd);
+                                     else v.lines.splice(lIdx + 1, 0, lineToAdd);
+                                     insertedId = lineToAdd.id;
+                                     handled = true;
+                                     break;
+                                 }
+                             }
+                        }
+
+                        if (contextItem.type === "verse" && contextItem.id === v.id) {
+                            v.lines.push(lineToAdd);
+                            insertedId = lineToAdd.id;
+                            handled = true;
+                            break;
+                        }
+
+                        const lIdx = v.lines.findIndex(l =>
+                            (contextItem.type === "line" && l.id === contextItem.id) ||
+                            (contextItem.type === "token" && l.tokens.some(t => t.id === contextItem.id))
+                        );
+
+                        if (lIdx !== -1) {
+                            v.lines.splice(lIdx + 1, 0, lineToAdd);
+                            insertedId = lineToAdd.id;
+                            handled = true;
+                            break;
+                        }
+                    }
+                }
+            } else if (type === "verse") {
+                const newVerses = parsed.verses.map(v => ({...v, id: createNewId('v'), lines: v.lines.map(l => ({...l, id: createNewId('l'), tokens: l.tokens.map(t => ({...t, id: createNewId('t')}))}))}));
+                if (newVerses.length === 0) return;
+                const verseToAdd = newVerses[0];
+
+                if (newDoc.verses.length === 0) {
+                    newDoc.verses.push(verseToAdd);
+                    insertedId = verseToAdd.id;
+                    handled = true;
+                } else {
+                    for (let vIdx = 0; vIdx < newDoc.verses.length; vIdx++) {
+                         const v = newDoc.verses[vIdx];
+                         if (contextItem.type === "empty-verse" && contextItem.id.startsWith(v.id)) {
+                             if (contextItem.id.endsWith("-start")) {
+                                 newDoc.verses.splice(vIdx, 0, verseToAdd);
+                             } else {
+                                 newDoc.verses.splice(vIdx + 1, 0, verseToAdd);
+                             }
+                             insertedId = verseToAdd.id;
+                             handled = true;
+                             break;
+                         } else if (
+                             (contextItem.type === "verse" && contextItem.id === v.id) ||
+                             (contextItem.type === "line" && v.lines.some(l => l.id === contextItem.id)) ||
+                             (contextItem.type === "token" && v.lines.some(l => l.tokens.some(t => t.id === contextItem.id))) ||
+                             (contextItem.type === "empty-line" && (contextItem.id.startsWith(v.id) || v.lines.some(l => contextItem.id.startsWith(l.id))))
+                         ) {
+                             newDoc.verses.splice(vIdx + 1, 0, verseToAdd);
+                             insertedId = verseToAdd.id;
+                             handled = true;
+                             break;
+                         }
+                    }
+                }
+            }
+
+            if (handled && insertedId) {
+                this.activeSuggestion = {
+                    targetId: insertedId,
+                    alternatives,
+                    currentIndex: 0
+                };
+
+                const targetNode: SelectionItem = { type: type === "word" ? "token" : type, id: insertedId };
+                this.setSelection({
+                    items: [targetNode],
+                    anchor: targetNode,
+                    focus: targetNode,
+                    mode: targetNode.type
+                });
+
+                this.setDoc(newDoc, "keyboard");
+
+                if (this.isKeyboardMode) {
+                    this.container.focus();
+                }
+            }
+        } catch (e) {
+             console.error("Error adding random suggestion", e);
+        }
+    }
+
+    public cycleSuggestion(direction: 1 | -1) {
+        if (!this.activeSuggestion || this.selection.items.length !== 1) return;
+        const currentItem = this.selection.items[0];
+
+        if (currentItem.id !== this.activeSuggestion.targetId) {
+            // Suggestion state is effectively dead because the user moved away.
+            this.activeSuggestion = null;
+            // Let the patchDOM naturally remove the highlight class when activeSuggestion is null context.
+            this.setDoc(this.doc, "keyboard");
+            return;
+        }
+
+        const { alternatives, currentIndex, targetId } = this.activeSuggestion;
+        let nextIndex = currentIndex + direction;
+        if (nextIndex >= alternatives.length) nextIndex = 0;
+        if (nextIndex < 0) nextIndex = alternatives.length - 1;
+
+        const textToInsert = alternatives[nextIndex];
+        const newDoc: Doc = JSON.parse(JSON.stringify(this.doc));
+        const parsed = defaultParser(textToInsert);
+        const createNewId = (prefix: string) => `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+        let handled = false;
+        let newActiveId = targetId;
+
+        if (currentItem.type === "token") {
+            const newTokens = parsed.verses.flatMap((v: Verse) => v.lines.flatMap((l: Line) => l.tokens));
+            if (newTokens.length > 0) {
+                 const tokenToAdd = { ...newTokens[0], id: targetId }; // Keep the same ID to save selection
+                 for (let vIdx = 0; vIdx < newDoc.verses.length; vIdx++) {
+                     const v = newDoc.verses[vIdx];
+                     for (let lIdx = 0; lIdx < v.lines.length; lIdx++) {
+                         const l = v.lines[lIdx];
+                         const tIdx = l.tokens.findIndex(t => t.id === targetId);
+                         if (tIdx !== -1) {
+                             l.tokens[tIdx] = tokenToAdd;
+                             newActiveId = tokenToAdd.id;
+                             handled = true;
+                             break;
+                         }
+                     }
+                     if (handled) break;
+                 }
+            }
+        } else if (currentItem.type === "line") {
+            const newLines = parsed.verses.flatMap((v: Verse) => v.lines).map(l => ({...l, id: targetId, tokens: l.tokens.map(t => ({...t, id: createNewId('t')}))})); // keep same line id
+            if (newLines.length > 0) {
+                 const lineToAdd = newLines[0];
+                 for (let vIdx = 0; vIdx < newDoc.verses.length; vIdx++) {
+                     const v = newDoc.verses[vIdx];
+                     const lIdx = v.lines.findIndex((l: Line) => l.id === targetId);
+                     if (lIdx !== -1) {
+                         v.lines[lIdx] = lineToAdd;
+                         newActiveId = lineToAdd.id;
+                         handled = true;
+                         break;
+                     }
+                 }
+            }
+        } else if (currentItem.type === "verse") {
+             const newVerses = parsed.verses.map(v => ({...v, id: targetId, lines: v.lines.map(l => ({...l, id: createNewId('l'), tokens: l.tokens.map(t => ({...t, id: createNewId('t')}))}))})); // keep same verse id
+            if (newVerses.length > 0) {
+                 const verseToAdd = newVerses[0];
+                 const vIdx = newDoc.verses.findIndex(v => v.id === targetId);
+                 if (vIdx !== -1) {
+                     newDoc.verses[vIdx] = verseToAdd;
+                     newActiveId = verseToAdd.id;
+                     handled = true;
+                 }
+            }
+        }
+
+        if (handled) {
+            this.activeSuggestion.currentIndex = nextIndex;
+            this.activeSuggestion.targetId = newActiveId;
+
+            const targetNode: SelectionItem = { type: currentItem.type, id: newActiveId };
+            this.setSelection({
+                items: [targetNode],
+                anchor: targetNode,
+                focus: targetNode,
+                mode: targetNode.type
+            });
+
+            this.setDoc(newDoc, "keyboard");
+
+            // Refocus for keyboard users so they can immediately cycle again
+            if (this.isKeyboardMode) {
+                this.container.focus();
+            }
+        }
     }
 
     // --- Input Handlers ---

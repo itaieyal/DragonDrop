@@ -50,6 +50,8 @@ export function canonicalizeSelection(doc: Doc, selection: SelectionState): Sele
         if (!selectedLines.has(parentLineId) && (!parentVerseId || !selectedVerses.has(parentVerseId))) {
           retained.push(item);
         }
+      } else {
+        retained.push(item);
       }
     }
   }

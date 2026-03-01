@@ -33,6 +33,17 @@ export class HistoryManager {
         this.notify();
     }
 
+    public clear(initialDoc: Doc, initialSelection: SelectionState = { items: [] }, initialLabel: string = "Initial State") {
+        this.undoStack = [];
+        this.redoStack = [];
+        this.currentRecord = {
+            doc: JSON.parse(JSON.stringify(initialDoc)),
+            selection: JSON.parse(JSON.stringify(initialSelection)),
+            label: initialLabel
+        };
+        this.notify();
+    }
+
     public get getState() {
         return this.currentRecord;
     }

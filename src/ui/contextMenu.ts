@@ -91,6 +91,36 @@ export class ContextMenu {
         this.el.style.top = `${y}px`;
     }
 
+    public openAt(x: number, y: number, actionsToForceShow?: string[]) {
+        // Mock a MouseEvent for the existing handler
+        const event = new MouseEvent("contextmenu", {
+            clientX: x,
+            clientY: y,
+            bubbles: true,
+            cancelable: true
+        });
+
+        // We need a subtle override on the condition logic if we explicitly want to show some items
+        if (actionsToForceShow && actionsToForceShow.length > 0) {
+            const originalItems = [...this.activeItems];
+
+            this.activeItems = this.activeItems.map(item => {
+                 if (actionsToForceShow.includes(item.label)) {
+                      return { ...item, condition: () => true };
+                 }
+                 return item;
+            });
+
+            this.onContextMenu(event);
+
+            // Restore
+            this.activeItems = originalItems;
+            return;
+        }
+
+        this.onContextMenu(event);
+    }
+
     private close() {
         this.el.style.display = "none";
     }

@@ -50,7 +50,7 @@ function defaultTokenRenderer(token: Token): HTMLElement {
  * It uses simple ID-keyed patching to reuse existing DOM nodes.
  * O(N) where N is number of total items in Doc.
  */
-export function patchDOM(container: HTMLElement, doc: Doc, customRenderers?: Renderers) {
+export function patchDOM(container: HTMLElement, doc: Doc, customRenderers?: Renderers, suggestedId?: string) {
   const renderVerse = customRenderers?.verse || defaultVerseRenderer;
   const renderLine = customRenderers?.line || defaultLineRenderer;
   const renderToken = customRenderers?.token || defaultTokenRenderer;
@@ -98,6 +98,9 @@ export function patchDOM(container: HTMLElement, doc: Doc, customRenderers?: Ren
            el = createEl(item, currentTypeInfo);
            el.setAttribute("data-id", item.id);
            el.setAttribute("data-type", currentTypeInfo);
+           if (item.id === suggestedId) el.classList.add("dd-suggested");
+           else el.classList.remove("dd-suggested");
+
            // Insert at correct position
            if (currentDOMIdx < parentEl.children.length) {
               parentEl.insertBefore(el, parentEl.children[currentDOMIdx]);
@@ -109,6 +112,8 @@ export function patchDOM(container: HTMLElement, doc: Doc, customRenderers?: Ren
            if (parentEl.children[currentDOMIdx] !== el) {
                parentEl.insertBefore(el, parentEl.children[currentDOMIdx]);
            }
+           if (item.id === suggestedId) el.classList.add("dd-suggested");
+           else el.classList.remove("dd-suggested");
         }
 
         if (updateEl) {

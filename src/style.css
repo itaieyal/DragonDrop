@@ -106,6 +106,38 @@ h2 {
   padding-bottom: 0;
 }
 
+.song-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 15px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid var(--border);
+}
+
+.song-toolbar input,
+.song-toolbar select {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-family: inherit;
+  font-size: 0.95rem;
+}
+
+.song-toolbar input:focus,
+.song-toolbar select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.song-toolbar input {
+  flex: 1;
+  min-width: 150px;
+}
+
 textarea {
   width: 100%;
   height: 150px;
@@ -299,6 +331,25 @@ pre#jsonView {
 .dd-token.dd-selected {
   background: var(--sel-border);
   color: #1e1e24;
+}
+
+/* Suggestion Mode Highlights */
+.dd-suggested {
+  border: 2px dashed #a3be8c !important; /* Greenish/Minty highlight */
+  background-color: rgba(163, 190, 140, 0.1) !important;
+  animation: dd-pulse 2s infinite;
+}
+
+@keyframes dd-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(163, 190, 140, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(163, 190, 140, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(163, 190, 140, 0);
+  }
 }
 
 /* Ghost Elements */

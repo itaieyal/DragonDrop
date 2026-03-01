@@ -10,22 +10,6 @@ export function handleKeyboardNavigation(
     alt: boolean,
     isRTL: boolean
 ): { doc?: Doc; selection?: SelectionState } | null {
-    if (selection.items.length === 0) {
-        if (key.startsWith("Arrow") && doc.verses.length > 0 && doc.verses[0].lines.length > 0 && doc.verses[0].lines[0].tokens.length > 0) {
-            const firstToken = doc.verses[0].lines[0].tokens[0];
-            const targetNode: SelectionItem = { type: "token", id: firstToken.id };
-            return {
-                selection: {
-                    items: [targetNode],
-                    anchor: targetNode,
-                    focus: targetNode,
-                    mode: "token"
-                }
-            };
-        }
-        return null;
-    }
-
     // Ordered list of all interactable nodes
     const flattenDoc = () => {
         const list: SelectionItem[] = [];
@@ -54,6 +38,22 @@ export function handleKeyboardNavigation(
     };
 
     const flatNodes = flattenDoc();
+
+    if (selection.items.length === 0) {
+        if (key.startsWith("Arrow") && flatNodes.length > 0) {
+            const targetNode = flatNodes[0];
+            return {
+                selection: {
+                    items: [targetNode],
+                    anchor: targetNode,
+                    focus: targetNode,
+                    mode: targetNode.type
+                }
+            };
+        }
+        return null;
+    }
+
     const currentAnchor = selection.focus || selection.anchor || selection.items[selection.items.length - 1];
 
     if (!currentAnchor) return null;

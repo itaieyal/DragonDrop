@@ -1,6 +1,9 @@
 import "./style.css";
 import { Editor } from "./editor";
 import { HistoryManager } from "./core/history";
+import { SongManager } from "./core/songs";
+
+const songManager = new SongManager();
 
 document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
   <div class="layout">
@@ -8,6 +11,19 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
       <div class="panel-header">
         <h2>Structured Editor (Drag & Drop)</h2>
         <button id="btnToggleTextArea">Show Free Text Area</button>
+      </div>
+      <div class="song-toolbar">
+        <select id="songSelect" title="Select a song"></select>
+        <button id="btnNewSong">+ New</button>
+        <button id="btnDuplicateSong">Duplicate</button>
+        <input type="text" id="songTitle" placeholder="Song Title" title="Song Title" />
+        <select id="songStatus" title="Song Status">
+          <option value="Freewrite">Freewrite</option>
+          <option value="Arrangement">Arrangement</option>
+          <option value="Lock">Lock</option>
+        </select>
+        <button id="btnSaveSong">Save</button>
+        <button id="btnDeleteSong" style="background: #bf616a;">Delete</button>
       </div>
       <div id="editorContainer"></div>
     </div>
@@ -39,6 +55,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
         <span><strong>Redo:</strong> R</span>
         <span><strong>Insert Text:</strong> I</span>
         <span><strong>Insert Line:</strong> O / Shift+O</span>
+        <span><strong>Add Suggestion:</strong> S</span>
         <span><strong>Delete:</strong> Backspace/Delete</span>
         <span><strong>Clear:</strong> Esc</span>
     </div>
@@ -55,27 +72,136 @@ const editorContainer = document.getElementById("editorContainer") as HTMLElemen
 const btnToggleTextArea = document.getElementById("btnToggleTextArea") as HTMLButtonElement;
 const freeTextAreaPanel = document.getElementById("freeTextAreaPanel") as HTMLElement;
 
-// Starting text
-const defaultPoem = `This is a test poem.
-It has two lines.
+// Song UI Elements
+const songSelect = document.getElementById("songSelect") as HTMLSelectElement;
+const btnNewSong = document.getElementById("btnNewSong") as HTMLButtonElement;
+const btnDuplicateSong = document.getElementById("btnDuplicateSong") as HTMLButtonElement;
+const btnDeleteSong = document.getElementById("btnDeleteSong") as HTMLButtonElement;
+const songTitle = document.getElementById("songTitle") as HTMLInputElement;
+const songStatus = document.getElementById("songStatus") as HTMLSelectElement;
+const btnSaveSong = document.getElementById("btnSaveSong") as HTMLButtonElement;
 
-And here is the second
-verse of the poem.`;
+// Render songs dropdown
+function updateSongSelect() {
+  const songs = songManager.getAllSongs();
+  songSelect.innerHTML = "";
+  songs.forEach((s) => {
+    const opt = document.createElement("option");
+    opt.value = s.id;
+    opt.textContent = `${s.title} (${s.status})`;
+    songSelect.appendChild(opt);
+  });
 
-const savedPoem = localStorage.getItem("dd-poem");
-rawText.value = savedPoem !== null ? savedPoem : defaultPoem;
+  const current = songManager.getCurrentSong();
+  if (current) {
+    songSelect.value = current.id;
+  }
+}
+
+// Ensure at least one song exists
+if (!songManager.getCurrentSong()) {
+  songManager.createSong();
+}
+updateSongSelect();
 
 let isRTL = localStorage.getItem("dd-rtl") === "true";
 if (isRTL) {
     document.querySelector('.layout')?.setAttribute("dir", "rtl");
 }
 
-// Setup Editor
-const editor = new Editor(editorContainer, { rtl: isRTL });
-editor.setText(rawText.value);
+function getFreewriteBank() {
+    const freewriteSongs = songManager.getAllSongs().filter(s => s.status === "Freewrite");
+    const words: string[] = [];
+    const lines: string[] = [];
+    const verses: string[] = [];
 
+    for (const song of freewriteSongs) {
+        // Very simple splitting; using the parser is more accurate but text splitting is fine for raw extraction.
+        // We'll split verses by double newline.
+        const songVerses = song.content.split(/\n\s*\n/).map(v => v.trim()).filter(v => v.length > 0);
+        verses.push(...songVerses);
+
+        for (const verse of songVerses) {
+            const songLines = verse.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+            lines.push(...songLines);
+
+            for (const line of songLines) {
+                // Split words by space or punctuation broadly
+                const songWords = line.split(/[\s\.,!?;:"'()[\]{}<>]+/).map(w => w.trim()).filter(w => w.length > 0);
+                words.push(...songWords);
+            }
+        }
+    }
+
+    return { words, lines, verses };
+}
+
+// Setup Editor
+const editor = new Editor(editorContainer, { rtl: isRTL, getFreewriteBank });
 const historyManager = new HistoryManager(editor.getDoc(), editor.getSelection(), "Initial State");
 let historyVersion = 1;
+
+// Load current song UI state
+function loadSongToUI() {
+  const current = songManager.getCurrentSong();
+  if (!current) return;
+
+  songTitle.value = current.title;
+  songStatus.value = current.status;
+  rawText.value = current.content;
+
+  if (editor) {
+    editor.setText(current.content);
+    updateJsonView();
+    historyManager.clear(editor.getDoc(), editor.getSelection(), "Loaded Song");
+    historyVersion = 1;
+  }
+}
+
+loadSongToUI();
+
+// Wire up Song UI Actions
+songSelect.addEventListener("change", () => {
+  songManager.setCurrentSongId(songSelect.value);
+  loadSongToUI();
+  updateSongSelect();
+});
+
+btnNewSong.addEventListener("click", () => {
+  songManager.createSong();
+  loadSongToUI();
+  updateSongSelect();
+});
+
+btnDuplicateSong.addEventListener("click", () => {
+  songManager.duplicateCurrentSong();
+  loadSongToUI();
+  updateSongSelect();
+});
+
+btnSaveSong.addEventListener("click", () => {
+  const current = songManager.getCurrentSong();
+  if (current) {
+    current.title = songTitle.value || "Untitled Song";
+    current.status = songStatus.value as any;
+    current.content = editor.getText();
+    songManager.updateSong(current);
+    updateSongSelect();
+  }
+});
+
+btnDeleteSong.addEventListener("click", () => {
+    const current = songManager.getCurrentSong();
+    if (current) {
+        if (confirm(`Are you sure you want to delete "${current.title}"?`)) {
+            songManager.deleteSong(current.id);
+            loadSongToUI();
+            updateSongSelect();
+        }
+    }
+});
+
+
 
 function renderHistory() {
     const listEl = document.getElementById("historyList")!;
@@ -120,7 +246,12 @@ updateJsonView();
 btnParse.addEventListener("click", () => {
     editor.setText(rawText.value);
     updateJsonView();
-    localStorage.setItem("dd-poem", rawText.value);
+    const current = songManager.getCurrentSong();
+    if (current) {
+        current.content = rawText.value;
+        songManager.updateSong(current);
+        updateSongSelect();
+    }
 });
 
 btnSerialize.addEventListener("click", () => {
@@ -148,7 +279,12 @@ btnToggleTextArea.addEventListener("click", () => {
 
 rawText.addEventListener("input", () => {
     editor.setText(rawText.value);
-    localStorage.setItem("dd-poem", rawText.value);
+    const current = songManager.getCurrentSong();
+    if (current) {
+        current.content = rawText.value;
+        songManager.updateSong(current);
+        updateSongSelect();
+    }
 });
 
 // React to structural changes from DnD
@@ -157,7 +293,14 @@ editor.on("change", (e) => {
     if (e.source !== "api") {
         rawText.value = editor.getText();
     }
-    localStorage.setItem("dd-poem", editor.getText());
+
+    // Auto-save changes to the current song text content
+    const current = songManager.getCurrentSong();
+    if (current) {
+        current.content = editor.getText();
+        songManager.updateSong(current);
+        updateSongSelect();
+    }
 
     if (e.source !== "undo" && e.source !== "redo") {
         let label = `Action ${historyVersion++}`;
