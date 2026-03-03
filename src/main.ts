@@ -5,62 +5,9 @@ import { SongManager } from "./core/songs";
 
 const songManager = new SongManager();
 
-document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
-  <div class="layout">
-    <div class="panel main-panel">
-      <div class="panel-header">
-        <h2>Structured Editor (Drag & Drop)</h2>
-        <button id="btnToggleTextArea">Show Free Text Area</button>
-      </div>
-      <div class="song-toolbar">
-        <select id="songSelect" title="Select a song"></select>
-        <button id="btnNewSong">+ New</button>
-        <button id="btnDuplicateSong">Duplicate</button>
-        <input type="text" id="songTitle" placeholder="Song Title" title="Song Title" />
-        <select id="songStatus" title="Song Status">
-          <option value="Freewrite">Freewrite</option>
-          <option value="Arrangement">Arrangement</option>
-          <option value="Lock">Lock</option>
-        </select>
-        <button id="btnSaveSong">Save</button>
-        <button id="btnDeleteSong" style="background: #bf616a;">Delete</button>
-      </div>
-      <div id="editorContainer"></div>
-    </div>
-
-    <div class="panel right-panel" id="historyPanel">
-      <h2>History</h2>
-      <div id="historyList" class="history-list"></div>
-    </div>
-
-    <div class="panel bottom-panel" id="freeTextAreaPanel" style="display: none;">
-      <h2>Free Text Area</h2>
-      <textarea id="rawText" placeholder="Write verses separated by double newlines here..."></textarea>
-      <div class="controls">
-        <button id="btnParse">Parse → Editor</button>
-        <button id="btnSerialize">← Serialize to Text</button>
-        <button id="btnRTL">Toggle RTL</button>
-      </div>
-
-      <h2 style="display: none;">Live Document JSON</h2>
-      <pre id="jsonView" style="display: none;"></pre>
-    </div>
-  </div>
-  <footer class="shortcuts-footer">
-    <div class="shortcuts-container">
-        <span><strong>Navigate:</strong> Arrows</span>
-        <span><strong>Select:</strong> Shift + Arrows</span>
-        <span><strong>Move:</strong> Alt + Arrows</span>
-        <span><strong>Undo:</strong> U</span>
-        <span><strong>Redo:</strong> R</span>
-        <span><strong>Insert Text:</strong> I</span>
-        <span><strong>Insert Line:</strong> O / Shift+O</span>
-        <span><strong>Add Suggestion:</strong> S</span>
-        <span><strong>Delete:</strong> Backspace/Delete</span>
-        <span><strong>Clear:</strong> Esc</span>
-    </div>
-  </footer>
-`;
+const app = document.querySelector<HTMLDivElement>("#app")!;
+const template = document.getElementById("app-template") as HTMLTemplateElement;
+app.appendChild(template.content.cloneNode(true));
 
 // Initialize UI
 const rawText = document.getElementById("rawText") as HTMLTextAreaElement;
@@ -99,10 +46,17 @@ function updateSongSelect() {
 }
 
 // Ensure at least one song exists
-if (!songManager.getCurrentSong()) {
-  songManager.createSong();
+async function initSession() {
+  await songManager.initialize();
+
+  if (!songManager.getCurrentSong()) {
+    await songManager.createSong();
+  }
+  updateSongSelect();
+  loadSongToUI();
 }
-updateSongSelect();
+
+initSession();
 
 let isRTL = localStorage.getItem("dd-rtl") === "true";
 if (isRTL) {
@@ -158,43 +112,43 @@ function loadSongToUI() {
   }
 }
 
-loadSongToUI();
+// loadSongToUI occurs in initSession()
 
 // Wire up Song UI Actions
-songSelect.addEventListener("change", () => {
-  songManager.setCurrentSongId(songSelect.value);
+songSelect.addEventListener("change", async () => {
+  await songManager.setCurrentSongId(songSelect.value);
   loadSongToUI();
   updateSongSelect();
 });
 
-btnNewSong.addEventListener("click", () => {
-  songManager.createSong();
+btnNewSong.addEventListener("click", async () => {
+  await songManager.createSong();
   loadSongToUI();
   updateSongSelect();
 });
 
-btnDuplicateSong.addEventListener("click", () => {
-  songManager.duplicateCurrentSong();
+btnDuplicateSong.addEventListener("click", async () => {
+  await songManager.duplicateCurrentSong();
   loadSongToUI();
   updateSongSelect();
 });
 
-btnSaveSong.addEventListener("click", () => {
+btnSaveSong.addEventListener("click", async () => {
   const current = songManager.getCurrentSong();
   if (current) {
     current.title = songTitle.value || "Untitled Song";
     current.status = songStatus.value as any;
     current.content = editor.getText();
-    songManager.updateSong(current);
+    await songManager.updateSong(current);
     updateSongSelect();
   }
 });
 
-btnDeleteSong.addEventListener("click", () => {
+btnDeleteSong.addEventListener("click", async () => {
     const current = songManager.getCurrentSong();
     if (current) {
         if (confirm(`Are you sure you want to delete "${current.title}"?`)) {
-            songManager.deleteSong(current.id);
+            await songManager.deleteSong(current.id);
             loadSongToUI();
             updateSongSelect();
         }
@@ -243,13 +197,13 @@ function updateJsonView() {
 updateJsonView();
 
 // Wire buttons
-btnParse.addEventListener("click", () => {
+btnParse.addEventListener("click", async () => {
     editor.setText(rawText.value);
     updateJsonView();
     const current = songManager.getCurrentSong();
     if (current) {
         current.content = rawText.value;
-        songManager.updateSong(current);
+        await songManager.updateSong(current);
         updateSongSelect();
     }
 });
@@ -277,18 +231,18 @@ btnToggleTextArea.addEventListener("click", () => {
     }
 });
 
-rawText.addEventListener("input", () => {
+rawText.addEventListener("input", async () => {
     editor.setText(rawText.value);
     const current = songManager.getCurrentSong();
     if (current) {
         current.content = rawText.value;
-        songManager.updateSong(current);
+        await songManager.updateSong(current);
         updateSongSelect();
     }
 });
 
 // React to structural changes from DnD
-editor.on("change", (e) => {
+editor.on("change", async (e) => {
     updateJsonView();
     if (e.source !== "api") {
         rawText.value = editor.getText();
@@ -298,7 +252,7 @@ editor.on("change", (e) => {
     const current = songManager.getCurrentSong();
     if (current) {
         current.content = editor.getText();
-        songManager.updateSong(current);
+        await songManager.updateSong(current);
         updateSongSelect();
     }
 

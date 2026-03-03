@@ -1,3 +1,5 @@
+import { localApi as api } from "../api/localApi";
+
 export type SongStatus = "Freewrite" | "Arrangement" | "Lock";
 
 export interface Song {
@@ -11,24 +13,22 @@ export interface Song {
 export class SongManager {
   private songs: Map<string, Song> = new Map();
   private currentSongId: string | null = null;
-  private readonly STORAGE_KEY_SONGS = "dd-songs";
-  private readonly STORAGE_KEY_CURRENT = "dd-current-song-id";
 
   constructor() {
-    this.loadFromStorage();
-    this.migrateLegacyPoem();
   }
 
-  private loadFromStorage() {
-    try {
-      const savedSongs = localStorage.getItem(this.STORAGE_KEY_SONGS);
-      if (savedSongs) {
-        const parsed = JSON.parse(savedSongs) as Song[];
-        this.songs.clear();
-        parsed.forEach((song) => this.songs.set(song.id, song));
-      }
+  public async initialize(): Promise<void> {
+    await this.loadFromStorage();
+    await this.migrateLegacyPoem();
+  }
 
-      const savedCurrentId = localStorage.getItem(this.STORAGE_KEY_CURRENT);
+  private async loadFromStorage() {
+    try {
+      const savedSongs = await api.getSongs();
+      this.songs.clear();
+      savedSongs.forEach((song) => this.songs.set(song.id, song));
+
+      const savedCurrentId = await api.getCurrentSongId();
       if (savedCurrentId && this.songs.has(savedCurrentId)) {
         this.currentSongId = savedCurrentId;
       } else if (this.songs.size > 0) {
@@ -41,29 +41,21 @@ export class SongManager {
     }
   }
 
-  private migrateLegacyPoem() {
+  private async migrateLegacyPoem() {
     // If no songs exist, check for legacy dd-poem and migrate it
     if (this.songs.size === 0) {
       const legacyPoem = localStorage.getItem("dd-poem");
 
-      const initialSong = this.createSong();
+      const initialSong = await this.createSong();
       if (legacyPoem) {
          initialSong.content = legacyPoem;
       }
-      this.updateSong(initialSong);
-      this.setCurrentSongId(initialSong.id);
+      await this.updateSong(initialSong);
+      await this.setCurrentSongId(initialSong.id);
     }
   }
 
-  private saveToStorage() {
-    const songsArray = Array.from(this.songs.values());
-    localStorage.setItem(this.STORAGE_KEY_SONGS, JSON.stringify(songsArray));
-    if (this.currentSongId) {
-      localStorage.setItem(this.STORAGE_KEY_CURRENT, this.currentSongId);
-    }
-  }
-
-  public createSong(): Song {
+  public async createSong(): Promise<Song> {
     const newSong: Song = {
       id: crypto.randomUUID(),
       title: "Untitled Song",
@@ -71,16 +63,16 @@ export class SongManager {
       status: "Freewrite",
       updatedAt: Date.now(),
     };
+    await api.createSong(newSong);
     this.songs.set(newSong.id, newSong);
-    this.saveToStorage();
-    this.setCurrentSongId(newSong.id);
+    await this.setCurrentSongId(newSong.id);
     return newSong;
   }
 
-  public updateSong(song: Song) {
+  public async updateSong(song: Song) {
     song.updatedAt = Date.now();
+    await api.updateSong(song);
     this.songs.set(song.id, song);
-    this.saveToStorage();
   }
 
   public getSong(id: string): Song | undefined {
@@ -98,7 +90,7 @@ export class SongManager {
     return undefined;
   }
 
-  public duplicateCurrentSong(): Song | undefined {
+  public async duplicateCurrentSong(): Promise<Song | undefined> {
     const current = this.getCurrentSong();
     if (!current) return undefined;
 
@@ -120,21 +112,22 @@ export class SongManager {
       updatedAt: Date.now(),
     };
 
+    await api.createSong(newSong);
     this.songs.set(newSong.id, newSong);
-    this.saveToStorage();
-    this.setCurrentSongId(newSong.id);
+    await this.setCurrentSongId(newSong.id);
     return newSong;
   }
 
-  public setCurrentSongId(id: string) {
+  public async setCurrentSongId(id: string) {
     if (this.songs.has(id)) {
       this.currentSongId = id;
-      this.saveToStorage();
+      await api.setCurrentSongId(id);
     }
   }
 
-  public deleteSong(id: string): boolean {
+  public async deleteSong(id: string): Promise<boolean> {
     if (this.songs.has(id)) {
+      await api.deleteSong(id);
       this.songs.delete(id);
       if (this.currentSongId === id) {
         this.currentSongId = null;
@@ -144,10 +137,9 @@ export class SongManager {
         if (allSongs.length > 0) {
             this.currentSongId = allSongs[0].id;
         } else {
-            this.createSong(); // This sets it as current
+            await this.createSong(); // This sets it as current
         }
       }
-      this.saveToStorage();
       return true;
     }
     return false;
